@@ -155,25 +155,25 @@ def _objective(trial, X, Xt, y, yt, _objective):
             "objective": _objective,
             "tree_method": "auto",
             "booster": trial.suggest_categorical("booster", ["gbtree", "dart"]),
-            "reg_lambda": trial.suggest_float("lambda", 1e-8, 1.0, log=True),
-            "reg_alpha": trial.suggest_float("alpha", 1e-8, 1.0, log=True),
-            "subsample": trial.suggest_float("subsample", 0.2, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.2, 1.0),
-            'random_state': 42,
-            'n_estimators': trial.suggest_int("n_estimators", 10, 1000, step = 10)
+            "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 1.0),
+            "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 1.0, log=True),
+            "subsample": trial.suggest_float("subsample", 0.5, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+            "random_state": 42,
+            "n_estimators": trial.suggest_int("n_estimators", 10, 500, step=10),
         }
 
         if _objective == "multi:softmax":
             param["num_class"] = n_targets
 
         if param["booster"] in ["gbtree", "dart"]:
-            param["max_depth"] = trial.suggest_int("max_depth", 3, 9, step=2)
-            param["min_child_weight"] = trial.suggest_int("min_child_weight", 2, 10)
-            param["eta"] = trial.suggest_float("eta", 1e-8, 1.0, log=True)
+            param["max_depth"] = trial.suggest_int("max_depth", 2, 10, step=2)
+            param["min_child_weight"] = trial.suggest_int("min_child_weight", 1, 10)
+            param["eta"] = trial.suggest_float("eta", 0.01, 1.0)  # lr
             param["gamma"] = trial.suggest_float("gamma", 1e-8, 1.0, log=True)
             param["grow_policy"] = trial.suggest_categorical(
-                "grow_policy", ["depthwise", "lossguide"]
-            )
+                "grow_policy", ["depthwise"]  # , "lossguide"]        
+             )
 
         if param["booster"] == "dart":
             param["sample_type"] = trial.suggest_categorical(
@@ -184,10 +184,9 @@ def _objective(trial, X, Xt, y, yt, _objective):
             )
             param["rate_drop"] = trial.suggest_float("rate_drop", 1e-8, 1.0, log=True)
             param["skip_drop"] = trial.suggest_float("skip_drop", 1e-8, 1.0, log=True)
-        # validation_metric = 'rmse' if _objective == "reg:squarederror" else "mlogloss"
-        if _objective == 'reg:squarederror':
+        if _objective == "reg:squarederror":
             bst = xgboost.XGBRFRegressor(**param)
-        else: 
+        else:
             bst = xgboost.XGBRFClassifier(**param)
         bst.fit(X, y)
         preds = bst.predict(Xt)
