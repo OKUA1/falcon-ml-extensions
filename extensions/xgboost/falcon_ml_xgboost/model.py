@@ -24,7 +24,6 @@ class _XGBoostBase(Model, ONNXConvertible, OptunaMixin):
     def __init__(
         self,
         verbosity: int = 0,
-        objective: Optional[str] = None,
         tree_method: str = "auto",
         booster: str = "dart",
         reg_lambda: float = 1.0,
@@ -35,13 +34,11 @@ class _XGBoostBase(Model, ONNXConvertible, OptunaMixin):
 
         params = kwargs
         params["verbosity"] = verbosity
-        params["objective"] = objective
         params["tree_method"] = tree_method
         params["booster"] = booster
         params["reg_lambda"] = reg_lambda
         params["reg_alpha"] = reg_alpha
         self.params = params
-        self.objective = "multi:softmax"
 
     def predict(self, X: npt.NDArray, *args: Any, **kwargs: Any) -> npt.NDArray:
         preds = self.bst.predict(X)
@@ -88,7 +85,6 @@ class FalconXGBoostClassifier(_XGBoostBase):
     ):
         super().__init__(
             verbosity=verbosity,
-            objective="multi:softmax",
             tree_method=tree_method,
             booster=booster,
             reg_lambda=reg_lambda,
@@ -98,14 +94,12 @@ class FalconXGBoostClassifier(_XGBoostBase):
 
     def fit(self, X: npt.NDArray, y: npt.NDArray, *args: Any, **kwargs: Any) -> None:
         self._shape = [None, *X.shape[1:]]
-        self.params["num_class"] = len(np.unique(y))
-        self.bst = xgboost.XGBClassifier(**self.params)
+        self.bst = xgboost.XGBClassifier(random_state = 42, **self.params)
         self.bst.fit(X, y)
 
     @classmethod
     def get_search_space(cls, X: npt.NDArray, y: npt.NDArray) -> Callable:
-        obj_ = "multi:softmax"
-
+        obj_ = "clf"
         def _objective_fn(trial, X, Xt, y, yt):
             return _objective(trial, X, Xt, y, yt, obj_)
 
@@ -125,7 +119,6 @@ class FalconXGBoostRegressor(_XGBoostBase):
     ):
         super().__init__(
             verbosity=verbosity,
-            objective="reg:squarederror",
             tree_method=tree_method,
             booster=booster,
             reg_lambda=reg_lambda,
@@ -142,17 +135,14 @@ class FalconXGBoostRegressor(_XGBoostBase):
 
     def fit(self, X: npt.NDArray, y: npt.NDArray, *args: Any, **kwargs: Any) -> None:
         self._shape = [None, *X.shape[1:]]
-        self.bst = xgboost.XGBRegressor(**self.params)
+        self.bst = xgboost.XGBRegressor(random_state = 42, **self.params)
         self.bst.fit(X, y)
 
 
 def _objective(trial, X, Xt, y, yt, _objective):
     with xgboost.config_context(verbosity=0):
-        n_targets = len(np.unique(y))
-
         param = {
             "verbosity": 0,
-            "objective": _objective,
             "tree_method": "auto",
             "booster": trial.suggest_categorical("booster", ["gbtree", "dart"]),
             "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 1.0),
@@ -163,11 +153,8 @@ def _objective(trial, X, Xt, y, yt, _objective):
             "n_estimators": trial.suggest_int("n_estimators", 10, 500, step=10),
         }
 
-        if _objective == "multi:softmax":
-            param["num_class"] = n_targets
-
         if param["booster"] in ["gbtree", "dart"]:
-            param["max_depth"] = trial.suggest_int("max_depth", 2, 10, step=2)
+            param["max_depth"] = trial.suggest_int("max_depth", 3, 10)
             param["min_child_weight"] = trial.suggest_int("min_child_weight", 1, 10)
             param["eta"] = trial.suggest_float("eta", 0.01, 1.0)  # lr
             param["gamma"] = trial.suggest_float("gamma", 1e-8, 1.0, log=True)
@@ -185,9 +172,9 @@ def _objective(trial, X, Xt, y, yt, _objective):
             param["rate_drop"] = trial.suggest_float("rate_drop", 1e-8, 1.0, log=True)
             param["skip_drop"] = trial.suggest_float("skip_drop", 1e-8, 1.0, log=True)
         if _objective == "reg:squarederror":
-            bst = xgboost.XGBRFRegressor(**param)
+            bst = xgboost.XGBRegressor(**param)
         else:
-            bst = xgboost.XGBRFClassifier(**param)
+            bst = xgboost.XGBClassifier(**param)
         bst.fit(X, y)
         preds = bst.predict(Xt)
         return {"predictions": preds, "loss": None}
